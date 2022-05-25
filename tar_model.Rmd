@@ -1,0 +1,142 @@
+---
+title: "Threshold Auto Regressive-TAR model"
+author: "Liseth Ramirez"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(TSA)
+library(forecast)
+library(tidyverse)
+```
+
+## Original Time Serie {.tabset}
+
+### Original values
+
+```{r cars}
+data(veilleux) 
+predator <- veilleux[,1]
+
+serie <- predator %>%
+  as_tibble() %>%
+  mutate(
+    n = 1:71
+  )
+
+serie
+
+```
+
+### Graph
+
+```{r echo=FALSE, warning=FALSE}
+serie %>%
+  ggplot(aes(n,x)) +
+  geom_line()
+```
+we can observed in the time serie is not stacionary, so we need do a transformation, but before that. we visualaced of the ACF and PACF
+
+```{r echo=FALSE}
+serie %>%
+  select(x) %>%
+  forecast::ggtsdisplay()
+```
+
+#### Transform {.tabset}
+We observed of frecuency in ACF and PACF, perhap for the cicly in original serie. we doing the experiment with log trasnformation or diff.
+
+##### log transform
+
+```{r echo=FALSE}
+serie %>%
+  mutate(log_x = log(x)) %>%
+  ggplot(aes(n,log_x)) +
+  geom_line()
+```
+
+##### diff transform
+
+```{r echo=FALSE}
+serie %>%
+  mutate(diff_x = c(0,diff(x))) %>%
+  ggplot(aes(n,diff_x)) +
+  geom_line()
+```
+
+
+### model AR
+
+in the analysis we concluced this AR model for that data
+
+```{r, echo=FALSE}
+ar1 <- TSA::arima(log(predator),order = c(1,0,0))
+ar1
+```
+
+
+```{r}
+ar1$residuals  %>%
+  as_tibble() %>%
+  forecast::ggtsdisplay()
+```
+
+we observed in the ACF and PACF, they don't have significant value, and the model of parameters does't have coeficient greastest than 1, so is the referent for us, because that model AR(1), It will be our model in threshold.
+
+### TAR Model
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+predator.tar.1=tar(y=log(predator),p1=1,p2=1,d=3,a=.1, b=.9,
+                   print=F)
+
+a <- qqnorm(predator.tar.1$std.res)
+```
+
+
+```{r, echo=FALSE}
+a %>% 
+  as_tibble() %>%
+  ggplot(aes(x, y)) +
+  geom_point() +
+  geom_abline(intercept=0, slope=1) +
+  ggtitle('qqplot')
+  
+```
+
+We doens't have any porblem, because the value are over the line.
+
+
+```{r, echo=FALSE}
+pred.predator=predict(predator.tar.1,n.ahead=60,n.sim=10000)
+
+predator.eq=window(predator,start=c(7,1))
+ts(pred.predator$pred.interval[2,],
+   start=end(predator.eq)+c(0,1),freq=2)
+
+yy=ts(c(log(predator.eq),pred.predator$fit),frequency=2,
+        start=start(predator.eq))
+plot(yy,type='n',ylim=range(c(yy,pred.predator$pred.interval)),
+       ylab='Log Predator',xlab=expression(t))
+lines(log(predator.eq))
+
+lines(window(yy, start=end(predator.eq)+c(0,1)),lty=2)
+
+lines(ts(pred.predator$pred.interval[2,],
+           start=end(predator.eq)+c(0,1),freq=2),lty=2)
+
+lines(ts(pred.predator$pred.interval[1,],
+           start=end(predator.eq)+c(0,1),freq=2),lty=2)
+grid()
+
+```
+
+
+```{r, echo=FALSE}
+plot(ts(apply(pred.predator$pred.interval,2,
+              function(x){x[2]-x[1]})),
+     ylab='Length of Prediction Intervals',
+     xlab='Number of Steps Ahead')
+grid()
+```
+
